@@ -136,13 +136,12 @@ def process_dataset(dataloader, total_batches):
     print(f"Dataset processing complete! Total time: {total_time:.2f}s")
 
 if __name__ == "__main__":
-    input_dir = "data"
-    output_dir = "data1"
+    input_dir = os.path.expanduser("~/scope-workspaceuser3/ffhq/images1024x1024")
+    output_dir = os.path.expanduser("~/scope-workspaceuser3/processed_ffhq")
 
     process_images_multithreaded(input_dir, output_dir)
 
     dataset = LargeDatasetIterator(output_dir)
     dataloader = DataLoader(dataset, batch_size=1, num_workers=25)
-
 
     process_dataset(dataloader, dataset.total_files)
