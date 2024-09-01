@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import ViT_B_16_Weights, vit_b_16
+from torchvision.models import ViT_L_16_Weights, vit_l_16  # Using a larger ViT model
 
 
 class PositionalEncoding2D(nn.Module):
@@ -48,19 +48,19 @@ class LearnableUpsample(nn.Module):
 
 
 class FrequencyDecompositionVisionTransformer(nn.Module):
-    def __init__(self, input_channels=3, hidden_dim=768, scale_factor=2):
+    def __init__(self, input_channels=3, hidden_dim=1024, scale_factor=2):
         super(FrequencyDecompositionVisionTransformer, self).__init__()
         self.scale_factor = scale_factor
         self.hidden_dim = hidden_dim
         self.vit_output_size = (
-            32  # ViT-B/16 outputs a 32x32 feature map for 512x512 input
+            32  # ViT-L/16 outputs a 32x32 feature map for 512x512 input
         )
 
-        # Load pre-trained ViT-B/16 model
-        self.vit = vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)
+        # Load pre-trained ViT-L/16 model
+        self.vit = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
 
         # Modify the patch embedding layer to handle 512x512 input
-        self.vit.patch_embed = nn.Conv2d(3, 768, kernel_size=16, stride=16)
+        self.vit.patch_embed = nn.Conv2d(3, 1024, kernel_size=16, stride=16)
 
         # Replace the classification head with a custom head
         self.vit.heads = nn.Sequential(
