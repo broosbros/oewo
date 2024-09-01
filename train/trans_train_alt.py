@@ -240,11 +240,11 @@ input_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
 output_dir = os.path.expanduser("/scope-workspaceuser3/outputs")
 log_dir = os.path.expanduser("/scope-workspaceuser3/logs")
 dataset = CustomDataset(input_dir)
-dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
 
 model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2)
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 num_epochs = 100
 train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir)
