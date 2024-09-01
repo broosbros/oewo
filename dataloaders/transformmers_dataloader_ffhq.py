@@ -7,18 +7,15 @@ from torch.utils.data import DataLoader, IterableDataset
 from torchvision import transforms
 from tqdm import tqdm
 import time
+import multiprocessing
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-def create_frequency_maps(img_tensor):
-    img_array = img_tensor.cpu().numpy().transpose(1, 2, 0)
+def create_frequency_maps(img_array):
     low_freq = gaussian_filter(img_array, sigma=2)
     high_freq = img_array - low_freq
-    low_freq_tensor = torch.tensor(low_freq.transpose(2, 0, 1)).to(device)
-    high_freq_tensor = torch.tensor(high_freq.transpose(2, 0, 1)).to(device)
-    return low_freq_tensor, high_freq_tensor
+    return low_freq, high_freq
 
-def process_single_image(filename, input_dir, output_dir, target_size_hr, target_size_lr):
+def process_single_image(args):
+    filename, input_dir, output_dir, target_size_hr, target_size_lr = args
     img_path = os.path.join(input_dir, filename)
     
     try:
@@ -36,25 +33,26 @@ def process_single_image(filename, input_dir, output_dir, target_size_hr, target
             img_lr = img_hr.resize(target_size_lr, Image.Resampling.BICUBIC)
             img_lr.save(os.path.join(output_dir, "LR", filename))
 
-            img_tensor_hr = transforms.ToTensor()(img_hr).to(device)
-            img_tensor_lr = transforms.ToTensor()(img_lr).to(device)
+            img_array_hr = np.array(img_hr).transpose(2, 0, 1) / 255.0
+            img_array_lr = np.array(img_lr).transpose(2, 0, 1) / 255.0
 
-            hr_low_freq, hr_high_freq = create_frequency_maps(img_tensor_hr)
-            lr_low_freq, lr_high_freq = create_frequency_maps(img_tensor_lr)
+            hr_low_freq, hr_high_freq = create_frequency_maps(img_array_hr)
+            lr_low_freq, lr_high_freq = create_frequency_maps(img_array_lr)
 
-            transforms.ToPILImage()(hr_low_freq.cpu()).save(os.path.join(output_dir, "HR_low_freq", filename))
-            transforms.ToPILImage()(hr_high_freq.cpu()).save(os.path.join(output_dir, "HR_high_freq", filename))
-            transforms.ToPILImage()(lr_low_freq.cpu()).save(os.path.join(output_dir, "LR_low_freq", filename))
-            transforms.ToPILImage()(lr_high_freq.cpu()).save(os.path.join(output_dir, "LR_high_freq", filename))
+            Image.fromarray((hr_low_freq.transpose(1, 2, 0) * 255).astype(np.uint8)).save(os.path.join(output_dir, "HR_low_freq", filename))
+            Image.fromarray((hr_high_freq.transpose(1, 2, 0) * 255 + 128).astype(np.uint8)).save(os.path.join(output_dir, "HR_high_freq", filename))
+            Image.fromarray((lr_low_freq.transpose(1, 2, 0) * 255).astype(np.uint8)).save(os.path.join(output_dir, "LR_low_freq", filename))
+            Image.fromarray((lr_high_freq.transpose(1, 2, 0) * 255 + 128).astype(np.uint8)).save(os.path.join(output_dir, "LR_high_freq", filename))
 
         return True
     except Exception as e:
         print(f"Error processing {filename}: {str(e)}")
         return False
 
-def process_images(
+def process_images_multiprocess(
     input_dir,
     output_dir,
+    num_processes=None,
     target_size_hr=(1024, 1024),
     target_size_lr=(512, 512),
 ):
@@ -67,11 +65,12 @@ def process_images(
     filenames = [f for f in os.listdir(input_dir) if f.lower().endswith((".jpg", ".png", ".jpeg"))]
     total_files = len(filenames)
     
-    successful = 0
-    for filename in tqdm(filenames, total=total_files, desc="Processing images"):
-        if process_single_image(filename, input_dir, output_dir, target_size_hr, target_size_lr):
-            successful += 1
+    args_list = [(filename, input_dir, output_dir, target_size_hr, target_size_lr) for filename in filenames]
+
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        results = list(tqdm(pool.imap(process_single_image, args_list), total=total_files, desc="Processing images"))
     
+    successful = sum(results)
     print(f"Processing complete. Successfully processed {successful}/{total_files} images.")
 
 class LargeDatasetIterator(IterableDataset):
@@ -109,7 +108,7 @@ def load_image(path, target_size):
         if img.mode != "RGB":
             img = img.convert("RGB")
         img = img.resize(target_size, Image.Resampling.BICUBIC)
-        return transforms.ToTensor()(img).to(device)
+        return transforms.ToTensor()(img)
 
 def process_dataset(dataloader, total_batches):
     update_interval = max(1, total_batches // 100)  # Update progress about 100 times
@@ -132,10 +131,12 @@ def process_dataset(dataloader, total_batches):
     print(f"Dataset processing complete! Total time: {total_time:.2f}s")
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method('spawn')
+    
     input_dir = os.path.expanduser("/scope-workspaceuser3/ffhq/images1024x1024")
     output_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
 
-    process_images(input_dir, output_dir)
+    process_images_multiprocess(input_dir, output_dir)
 
     dataset = LargeDatasetIterator(output_dir)
     dataloader = DataLoader(dataset, batch_size=1, num_workers=1)
