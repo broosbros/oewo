@@ -1,5 +1,4 @@
 import os
-import concurrent.futures
 import numpy as np
 import torch
 from PIL import Image
@@ -19,8 +18,7 @@ def create_frequency_maps(img_tensor):
     high_freq_tensor = torch.tensor(high_freq.transpose(2, 0, 1)).to(device)
     return low_freq_tensor, high_freq_tensor
 
-def process_single_image(args):
-    filename, input_dir, output_dir, target_size_hr, target_size_lr = args
+def process_single_image(filename, input_dir, output_dir, target_size_hr, target_size_lr):
     img_path = os.path.join(input_dir, filename)
     
     try:
@@ -54,10 +52,9 @@ def process_single_image(args):
         print(f"Error processing {filename}: {str(e)}")
         return False
 
-def process_images_multithreaded(
+def process_images(
     input_dir,
     output_dir,
-    max_workers=None,
     target_size_hr=(1024, 1024),
     target_size_lr=(512, 512),
 ):
@@ -70,12 +67,11 @@ def process_images_multithreaded(
     filenames = [f for f in os.listdir(input_dir) if f.lower().endswith((".jpg", ".png", ".jpeg"))]
     total_files = len(filenames)
     
-    args_list = [(filename, input_dir, output_dir, target_size_hr, target_size_lr) for filename in filenames]
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(tqdm(executor.map(process_single_image, args_list), total=total_files, desc="Processing images"))
+    successful = 0
+    for filename in tqdm(filenames, total=total_files, desc="Processing images"):
+        if process_single_image(filename, input_dir, output_dir, target_size_hr, target_size_lr):
+            successful += 1
     
-    successful = sum(results)
     print(f"Processing complete. Successfully processed {successful}/{total_files} images.")
 
 class LargeDatasetIterator(IterableDataset):
@@ -136,13 +132,12 @@ def process_dataset(dataloader, total_batches):
     print(f"Dataset processing complete! Total time: {total_time:.2f}s")
 
 if __name__ == "__main__":
-    input_dir = "~/scope-workspaceuser3/ffhq/images1024x1024"
-    output_dir = "~/scope-workspaceuser3/processed_ffhq"
+    input_dir = os.path.expanduser("~/scope-workspaceuser3/ffhq/images1024x1024")
+    output_dir = os.path.expanduser("~/scope-workspaceuser3/processed_ffhq")
 
-    process_images_multithreaded(input_dir, output_dir)
+    process_images(input_dir, output_dir)
 
     dataset = LargeDatasetIterator(output_dir)
-    dataloader = DataLoader(dataset, batch_size=1, num_workers=25)
-
+    dataloader = DataLoader(dataset, batch_size=1, num_workers=1)
 
     process_dataset(dataloader, dataset.total_files)
