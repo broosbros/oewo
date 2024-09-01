@@ -25,29 +25,38 @@ class CustomDataset(Dataset):
         self.image_paths = self._get_image_paths()
 
     def _get_image_paths(self):
+        """
+        This method gets image paths directly from the LR, HR, HR_low_freq, and HR_high_freq directories
+        in the base directory.
+        """
         image_paths = []
-        for subdir in os.listdir(self.base_dir):
-            subdir_path = os.path.join(self.base_dir, subdir)
-            if os.path.isdir(subdir_path):
-                lr_dir = os.path.join(subdir_path, "LR")
-                hr_dir = os.path.join(subdir_path, "HR")
-                hr_low_freq_dir = os.path.join(subdir_path, "HR_low_freq")
-                hr_high_freq_dir = os.path.join(subdir_path, "HR_high_freq")
 
-                image_files = [
-                    f
-                    for f in os.listdir(lr_dir)
-                    if f.endswith((".jpg", ".png", ".jpeg"))
-                ]
-                for f in image_files:
-                    image_paths.append(
-                        {
-                            "lr": os.path.join(lr_dir, f),
-                            "hr": os.path.join(hr_dir, f),
-                            "hr_low_freq": os.path.join(hr_low_freq_dir, f),
-                            "hr_high_freq": os.path.join(hr_high_freq_dir, f),
-                        }
-                    )
+        # Define paths for LR, HR, HR_low_freq, and HR_high_freq directories
+        lr_dir = os.path.join(self.base_dir, "LR")
+        hr_dir = os.path.join(self.base_dir, "HR")
+        hr_low_freq_dir = os.path.join(self.base_dir, "HR_low_freq")
+        hr_high_freq_dir = os.path.join(self.base_dir, "HR_high_freq")
+
+        # Ensure all required directories exist
+        if not (os.path.exists(lr_dir) and os.path.exists(hr_dir) and os.path.exists(hr_low_freq_dir) and os.path.exists(hr_high_freq_dir)):
+            raise FileNotFoundError(
+                "The directories 'LR', 'HR', 'HR_low_freq', and 'HR_high_freq' must exist in the base directory."
+            )
+
+        image_files = [
+            f for f in os.listdir(lr_dir) if f.endswith((".jpg", ".png", ".jpeg"))
+        ]
+
+        for f in image_files:
+            image_paths.append(
+                {
+                    "lr": os.path.join(lr_dir, f),
+                    "hr": os.path.join(hr_dir, f),
+                    "hr_low_freq": os.path.join(hr_low_freq_dir, f),
+                    "hr_high_freq": os.path.join(hr_high_freq_dir, f),
+                }
+            )
+
         return image_paths
 
     def __len__(self):
@@ -63,7 +72,8 @@ class CustomDataset(Dataset):
 
     @staticmethod
     def load_image(path):
-        return transforms.ToTensor()(Image.open(path))
+        return transforms.ToTensor()(Image.open(path).convert("RGB"))
+
 
 
 def save_image(tensor, path):
@@ -226,9 +236,9 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     writer.close()  # Close the TensorBoard writer
 
 
-input_dir = "data"
-output_dir = "outputs"
-log_dir = "logs"
+input_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
+output_dir = os.path.expanduser("/scope-workspaceuser3/outputs")
+log_dir = os.path.expanduser("/scope-workspaceuser3/logs")
 dataset = CustomDataset(input_dir)
 dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
