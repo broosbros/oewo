@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import ViT_B_16_Weights, vit_b_16
+from torchvision.models import ViT_L_16_Weights, vit_l_16  # Using a larger ViT model
 
 
 class PositionalEncoding2D(nn.Module):
@@ -48,25 +48,19 @@ class LearnableUpsample(nn.Module):
 
 
 class FrequencyDecompositionVisionTransformer(nn.Module):
-    def __init__(self, input_channels=3, hidden_dim=768, scale_factor=2):
+    def __init__(self, input_channels=3, hidden_dim=1024, scale_factor=2):
         super(FrequencyDecompositionVisionTransformer, self).__init__()
         self.scale_factor = scale_factor
         self.hidden_dim = hidden_dim
         self.vit_output_size = (
-            32  # ViT-B/16 outputs a 32x32 feature map for 512x512 input
+            32  # ViT-L/16 outputs a 32x32 feature map for 512x512 input
         )
 
-        # Load pre-trained ViT-B/16 model
-        self.vit = vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)
+        # Load pre-trained ViT-L/16 model
+        self.vit = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
 
         # Modify the patch embedding layer to handle 512x512 input
-        self.vit.patch_embed = nn.Conv2d(3, 768, kernel_size=16, stride=16)
-
-        # Replace the positional encoding
-        self.vit.pos_embed = nn.Parameter(
-            torch.zeros(1, (512 // 16) ** 2 + 1, hidden_dim)
-        )
-        self.vit.pos_drop = nn.Dropout(p=0.0)
+        self.vit.patch_embed = nn.Conv2d(3, 1024, kernel_size=16, stride=16)
 
         # Replace the classification head with a custom head
         self.vit.heads = nn.Sequential(
@@ -84,7 +78,6 @@ class FrequencyDecompositionVisionTransformer(nn.Module):
             param.requires_grad = True
         for param in self.vit.patch_embed.parameters():
             param.requires_grad = True
-        self.vit.pos_embed.requires_grad = True  # Make positional embedding learnable
 
         # Calculate the number of upsampling layers needed
         self.num_upsample_layers = self.calculate_upsample_layers()
@@ -114,16 +107,7 @@ class FrequencyDecompositionVisionTransformer(nn.Module):
     def forward(self, x):
         target_size = 512 * self.scale_factor
 
-        # Apply positional encoding adjustment if needed
-        batch_size = x.size(0)
-        if self.vit.pos_embed.size(0) != batch_size:
-            pos_embed = self.vit.pos_embed.expand(batch_size, -1, -1)
-        else:
-            pos_embed = self.vit.pos_embed
-
-        x = self.vit.patch_embed(x) + pos_embed
-        x = self.vit.pos_drop(x)
-        x = self.vit.encoder(x)
+        x = self.vit(x)
 
         x = x.reshape(
             x.size(0), self.hidden_dim, self.vit_output_size, self.vit_output_size
