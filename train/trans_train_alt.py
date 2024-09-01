@@ -240,7 +240,7 @@ input_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
 output_dir = os.path.expanduser("/scope-workspaceuser3/outputs")
 log_dir = os.path.expanduser("/scope-workspaceuser3/logs")
 dataset = CustomDataset(input_dir)
-dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
 
 model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2)
 criterion = nn.MSELoss()
