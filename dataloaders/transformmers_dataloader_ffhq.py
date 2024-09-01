@@ -132,8 +132,8 @@ def process_dataset(dataloader, total_batches):
     print(f"Dataset processing complete! Total time: {total_time:.2f}s")
 
 if __name__ == "__main__":
-    input_dir = os.path.expanduser("~/scope-workspaceuser3/ffhq/images1024x1024")
-    output_dir = os.path.expanduser("~/scope-workspaceuser3/processed_ffhq")
+    input_dir = os.path.expanduser("/scope-workspaceuser3/ffhq/images1024x1024")
+    output_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
 
     process_images(input_dir, output_dir)
 
