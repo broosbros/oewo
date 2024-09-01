@@ -57,7 +57,7 @@ class FrequencyDecompositionVisionTransformer(nn.Module):
         )
 
         # Load pre-trained ViT-L/16 model
-        self.vit = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
+        self.vit = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_SWAG_E2E_V1)
 
         # Modify the patch embedding layer to handle 512x512 input
         self.vit.patch_embed = nn.Conv2d(3, 1024, kernel_size=16, stride=16)
