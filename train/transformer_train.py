@@ -231,15 +231,15 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     writer.close()  # Close the TensorBoard writer
 
 
-input_dir = "data"
-output_dir = "outputs"
+input_dir = os.path.expanduser("/scope-workspaceuser3/gt_db")
+output_dir = os.path.expanduser("/scope-workspaceuser3/gt_db_output")
 log_dir = os.path.expanduser("/scope-workspaceuser3/gt_db_logs")
 dataset = CustomDataset(input_dir)
 dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
 model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2)
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 num_epochs = 100
 train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir)
