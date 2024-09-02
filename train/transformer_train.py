@@ -163,11 +163,12 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
 
             epoch_loss += total_loss.item()
             batch_count += 1
+            writer.add_scalar("Batch Loss", total_loss.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/SSIM", loss_sr.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/Low Frequency", loss_low_freq.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/High Frequency", loss_high_freq.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/Uncertainty", uncertainty_loss.item(), epoch * len(dataloader) + batch_idx)
 
-            # Log batch loss to TensorBoard
-            writer.add_scalar(
-                "Batch Loss", total_loss.item(), epoch * len(dataloader) + batch_idx
-            )
 
             # Save images every few batches
             if batch_idx % 10 == 0:

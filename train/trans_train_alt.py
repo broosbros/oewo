@@ -146,9 +146,9 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
         epoch_loss = 0.0
         batch_count = 0
 
-        for batch_idx, (lr_img, hr_img, gt_low_freq, gt_high_freq) in tqdm(enumerate(
-            dataloader
-        ),desc="Batch", unit="Batches",total=len(dataloader)):
+        for batch_idx, (lr_img, hr_img, gt_low_freq, gt_high_freq) in tqdm(
+            enumerate(dataloader), desc="Batch", unit="Batches"
+        ):
             lr_img = lr_img.to(device)
             hr_img = hr_img.to(device)
             gt_low_freq = gt_low_freq.to(device)
@@ -158,10 +158,9 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
 
             pred_low_freq, pred_high_freq = model(lr_img)
 
-            loss_sr = ssim_loss(pred_low_freq + pred_high_freq, hr_img)
+            loss_sr = 1 - ssim_loss(pred_low_freq + pred_high_freq, hr_img)
             loss_low_freq = criterion(pred_low_freq, gt_low_freq)
             loss_high_freq = criterion(pred_high_freq, gt_high_freq)
-
             uncertainty_loss = uncertainty_based_loss(
                 pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq
             )
@@ -174,60 +173,46 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             epoch_loss += total_loss.item()
             batch_count += 1
 
-            # Log batch loss to TensorBoard
-            writer.add_scalar(
-                "Batch Loss", total_loss.item(), epoch * len(dataloader) + batch_idx
-            )
-            
+            # Log individual losses to TensorBoard
+            writer.add_scalar("Loss/SR Loss", loss_sr.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/Low Freq Loss", loss_low_freq.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/High Freq Loss", loss_high_freq.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/Uncertainty Loss", uncertainty_loss.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/Total Loss", total_loss.item(), epoch * len(dataloader) + batch_idx)
 
             # Save images every few batches
             if batch_idx % 10 == 0:
                 for i in range(lr_img.size(0)):
                     save_image(
                         lr_img[i],
-                        os.path.join(
-                            output_dir, f"lr_img_{epoch+1}_{batch_idx}_{i}.png"
-                        ),
+                        os.path.join(output_dir, f"lr_img_{epoch+1}_{batch_idx}_{i}.png"),
                     )
                     save_image(
                         hr_img[i],
-                        os.path.join(
-                            output_dir, f"hr_img_{epoch+1}_{batch_idx}_{i}.png"
-                        ),
+                        os.path.join(output_dir, f"hr_img_{epoch+1}_{batch_idx}_{i}.png"),
                     )
                     save_image(
                         pred_low_freq[i].clamp(0, 1),
-                        os.path.join(
-                            output_dir, f"pred_low_freq_{epoch+1}_{batch_idx}_{i}.png"
-                        ),
+                        os.path.join(output_dir, f"pred_low_freq_{epoch+1}_{batch_idx}_{i}.png"),
                     )
                     save_image(
                         pred_high_freq[i].clamp(0, 1),
-                        os.path.join(
-                            output_dir, f"pred_high_freq_{epoch+1}_{batch_idx}_{i}.png"
-                        ),
+                        os.path.join(output_dir, f"pred_high_freq_{epoch+1}_{batch_idx}_{i}.png"),
                     )
                     save_image(
                         gt_low_freq[i],
-                        os.path.join(
-                            output_dir, f"gt_low_freq_{epoch+1}_{batch_idx}_{i}.png"
-                        ),
+                        os.path.join(output_dir, f"gt_low_freq_{epoch+1}_{batch_idx}_{i}.png"),
                     )
                     save_image(
                         gt_high_freq[i],
-                        os.path.join(
-                            output_dir, f"gt_high_freq_{epoch+1}_{batch_idx}_{i}.png"
-                        ),
+                        os.path.join(output_dir, f"gt_high_freq_{epoch+1}_{batch_idx}_{i}.png"),
                     )
 
-                # Log images to TensorBoard
-                writer.add_images(
-                    "Low Frequency Predictions", pred_low_freq.clamp(0, 1), epoch
-                )
-                writer.add_images(
-                    "High Frequency Predictions", pred_high_freq.clamp(0, 1), epoch
-                )
+                
+                writer.add_images("Low Frequency Predictions", pred_low_freq.clamp(0, 1), epoch)
+                writer.add_images("High Frequency Predictions", pred_high_freq.clamp(0, 1), epoch)
 
+            # Clean up
             del lr_img, hr_img, gt_low_freq, gt_high_freq, pred_low_freq, pred_high_freq
             torch.cuda.empty_cache()
 
@@ -237,6 +222,7 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
         # Log epoch loss to TensorBoard
         writer.add_scalar("Epoch Loss", average_loss, epoch)
 
+    # Save the model state
     torch.save(model.state_dict(), "freq_decomp_transformer.pth")
     writer.close()  # Close the TensorBoard writer
 
