@@ -231,7 +231,7 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     writer.close()  # Close the TensorBoard writer
 
 
-input_dir = os.path.expanduser("/scope-workspaceuser3/gt_db")
+input_dir = os.path.expanduser("/scope-workspaceuser3/gt_db_processed")
 output_dir = os.path.expanduser("/scope-workspaceuser3/gt_db_output")
 log_dir = os.path.expanduser("/scope-workspaceuser3/gt_db_logs")
 dataset = CustomDataset(input_dir)
