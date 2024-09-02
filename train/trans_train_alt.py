@@ -9,7 +9,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
-
+from tqdm import tqdm
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
     from model.transformer_alt import FrequencyDecompositionVisionTransformer
@@ -137,7 +137,7 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     # Initialize TensorBoard writer
     writer = SummaryWriter(log_dir)
 
-    for epoch in range(num_epochs):
+    for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch"):
         model.train()
         epoch_loss = 0.0
         batch_count = 0
@@ -174,6 +174,7 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             writer.add_scalar(
                 "Batch Loss", total_loss.item(), epoch * len(dataloader) + batch_idx
             )
+            
 
             # Save images every few batches
             if batch_idx % 10 == 0:
