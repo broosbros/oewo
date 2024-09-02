@@ -9,6 +9,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
+from pytorch_msssim import ssim
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
@@ -116,7 +117,10 @@ def uncertainty_based_loss(pred_low_freq, pred_high_freq, gt_low_freq, gt_high_f
 
     return total_loss
 
-
+def ssim_loss(pred, target):
+    ssim_value = ssim(pred, target, data_range=1.0, size_average=True)
+    return 1 - ssim_value
+    
 def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -144,7 +148,7 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
 
             pred_low_freq, pred_high_freq = model(lr_img)
 
-            loss_sr = criterion(pred_low_freq + pred_high_freq, hr_img)
+            loss_sr = ssim_loss(pred_low_freq + pred_high_freq, hr_img)
             loss_low_freq = criterion(pred_low_freq, gt_low_freq)
             loss_high_freq = criterion(pred_high_freq, gt_high_freq)
 
@@ -228,7 +232,7 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
 
 input_dir = "data"
 output_dir = "outputs"
-log_dir = "logs"
+log_dir = os.path.expanduser("/scope-workspaceuser3/gt_db_logs")
 dataset = CustomDataset(input_dir)
 dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
