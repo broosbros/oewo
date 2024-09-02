@@ -246,5 +246,5 @@ model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
-num_epochs = 100
+num_epochs = 2
 train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir)
