@@ -142,9 +142,9 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
         epoch_loss = 0.0
         batch_count = 0
 
-        for batch_idx, (lr_img, hr_img, gt_low_freq, gt_high_freq) in enumerate(
+        for batch_idx, (lr_img, hr_img, gt_low_freq, gt_high_freq) in tqdm(enumerate(
             dataloader
-        ):
+        ),desc="Batch", unit="Batches"):
             lr_img = lr_img.to(device)
             hr_img = hr_img.to(device)
             gt_low_freq = gt_low_freq.to(device)
