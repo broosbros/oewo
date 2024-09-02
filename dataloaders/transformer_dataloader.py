@@ -177,8 +177,8 @@ def print_image_dimensions(
 
 
 if __name__ == "__main__":
-    input_dir = "gt_db"
-    output_dir = "data"
+    input_dir = os.path.expanduser("/scope-workspaceuser3/gt_db")
+    output_dir =  os.path.expanduser("/scope-workspaceuser3/gt_db_processed")
 
     process_images_in_batches(input_dir, output_dir, batch_size=4)
 
