@@ -38,7 +38,7 @@ class PositionalEncoding2D(nn.Module):
 class LearnableUpsample(nn.Module):
     def __init__(self, channels, scale_factor):
         super(LearnableUpsample, self).__init__()
-        self.conv = nn.Conv2d(channels, channels * scale_factor**2, kernel_size=3, padding=1)
+        self.conv = nn.Conv2d(channels, channels * scale_factor**2, kernel_size=1)
         self.pixel_shuffle = nn.PixelShuffle(scale_factor)
 
     def forward(self, x):
@@ -52,10 +52,12 @@ class FrequencyDecompositionVisionTransformer(nn.Module):
         super(FrequencyDecompositionVisionTransformer, self).__init__()
         self.scale_factor = scale_factor
         self.hidden_dim = hidden_dim
-        self.vit_output_size = 32  # ViT-L/16 outputs a 32x32 feature map for 512x512 input
+        self.vit_output_size = (
+            32  # ViT-L/16 outputs a 32x32 feature map for 512x512 input
+        )
 
         # Load pre-trained ViT-L/16 model
-        self.vit = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_SWAG_E2E_V1)
+        self.vit = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
 
         # Modify the patch embedding layer to handle 512x512 input
         self.vit.patch_embed = nn.Conv2d(3, 1024, kernel_size=16, stride=16)
@@ -66,8 +68,6 @@ class FrequencyDecompositionVisionTransformer(nn.Module):
                 self.vit.hidden_dim,
                 self.vit_output_size * self.vit_output_size * hidden_dim,
             ),
-            nn.ReLU(),
-            nn.Linear(hidden_dim * self.vit_output_size * self.vit_output_size, hidden_dim),
             nn.ReLU(),
         )
 
@@ -85,14 +85,6 @@ class FrequencyDecompositionVisionTransformer(nn.Module):
         # Learnable upsampling layers
         self.upsample_layers = nn.ModuleList(
             [LearnableUpsample(hidden_dim, 2) for _ in range(self.num_upsample_layers)]
-        )
-
-        # Additional convolution layers after ViT
-        self.extra_conv_layers = nn.Sequential(
-            nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
-            nn.ReLU(),
         )
 
         # Projection layers for low and high frequency
@@ -116,11 +108,10 @@ class FrequencyDecompositionVisionTransformer(nn.Module):
         target_size = 512 * self.scale_factor
 
         x = self.vit(x)
+
         x = x.reshape(
             x.size(0), self.hidden_dim, self.vit_output_size, self.vit_output_size
         )
-
-        x = self.extra_conv_layers(x)
 
         for upsample_layer in self.upsample_layers:
             x = upsample_layer(x)
