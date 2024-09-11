@@ -1,6 +1,5 @@
 import os
 import sys
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,6 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from tqdm import tqdm
 from pytorch_msssim import ssim
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
     from model.transformer_alt import FrequencyDecompositionVisionTransformer
@@ -26,27 +26,18 @@ class CustomDataset(Dataset):
         self.image_paths = self._get_image_paths()
 
     def _get_image_paths(self):
-        """
-        This method gets image paths directly from the LR, HR, HR_low_freq, and HR_high_freq directories
-        in the base directory.
-        """
         image_paths = []
-
-        # Define paths for LR, HR, HR_low_freq, and HR_high_freq directories
         lr_dir = os.path.join(self.base_dir, "LR")
         hr_dir = os.path.join(self.base_dir, "HR")
         hr_low_freq_dir = os.path.join(self.base_dir, "HR_low_freq")
         hr_high_freq_dir = os.path.join(self.base_dir, "HR_high_freq")
 
-        # Ensure all required directories exist
         if not (os.path.exists(lr_dir) and os.path.exists(hr_dir) and os.path.exists(hr_low_freq_dir) and os.path.exists(hr_high_freq_dir)):
             raise FileNotFoundError(
                 "The directories 'LR', 'HR', 'HR_low_freq', and 'HR_high_freq' must exist in the base directory."
             )
 
-        image_files = [
-            f for f in os.listdir(lr_dir) if f.endswith((".jpg", ".png", ".jpeg"))
-        ]
+        image_files = [f for f in os.listdir(lr_dir) if f.endswith((".jpg", ".png", ".jpeg"))]
 
         for f in image_files:
             image_paths.append(
@@ -76,11 +67,50 @@ class CustomDataset(Dataset):
         return transforms.ToTensor()(Image.open(path).convert("RGB"))
 
 
+class LaplacianPyramid(nn.Module):
+    def __init__(self, levels):
+        super(LaplacianPyramid, self).__init__()
+        self.levels = levels
+
+    def forward(self, img):
+        pyramids = [img]
+        current_img = img
+        for _ in range(self.levels - 1):
+            down = F.avg_pool2d(current_img, kernel_size=2, stride=2)
+            up = F.interpolate(down, scale_factor=2, mode='bilinear', align_corners=False)
+            laplacian = current_img - up
+            pyramids.append(laplacian)
+            current_img = down
+        pyramids.append(current_img)  # last level
+        return pyramids
+
+
+def laplacian_pyramid_loss(pred, target, levels=3):
+    laplacian_pyramid = LaplacianPyramid(levels)
+    pred_pyramids = laplacian_pyramid(pred)
+    target_pyramids = laplacian_pyramid(target)
+    loss = 0
+    for pred_lap, target_lap in zip(pred_pyramids, target_pyramids):
+        loss += F.mse_loss(pred_lap, target_lap)
+    return loss
+
 
 def save_image(tensor, path):
     image = transforms.ToPILImage()(tensor.cpu())
     image.save(path)
 
+def fft_loss(pred, target):
+    pred_fft = torch.fft.fft2(pred)
+    target_fft = torch.fft.fft2(target)
+    pred_mag = torch.abs(pred_fft)
+    target_mag = torch.abs(target_fft)
+    pred_phase = torch.angle(pred_fft)
+    target_phase = torch.angle(target_fft)
+
+    magnitude_loss = F.mse_loss(pred_mag, target_mag)
+    phase_loss = F.mse_loss(pred_phase, target_phase)
+
+    return magnitude_loss + phase_loss
 
 def uncertainty_based_loss(pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq):
     uncertainty_low = torch.abs(pred_low_freq - gt_low_freq)
@@ -138,7 +168,6 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Initialize TensorBoard writer
     writer = SummaryWriter(log_dir)
 
     for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch"):
@@ -159,13 +188,16 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             pred_low_freq, pred_high_freq = model(lr_img)
 
             loss_sr = 1 - ssim_loss(pred_low_freq + pred_high_freq, hr_img)
-            loss_low_freq = criterion(pred_low_freq, gt_low_freq)
-            loss_high_freq = criterion(pred_high_freq, gt_high_freq)
+            loss_low_freq = fft_loss(pred_low_freq, gt_low_freq)
+            loss_high_freq = fft_loss(pred_high_freq, gt_high_freq)
             uncertainty_loss = uncertainty_based_loss(
                 pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq
             )
+            pyramid_loss = laplacian_pyramid_loss(
+                pred_low_freq + pred_high_freq, hr_img
+            )
 
-            total_loss = loss_sr + loss_low_freq + loss_high_freq + uncertainty_loss
+            total_loss = loss_sr + loss_low_freq + loss_high_freq + uncertainty_loss + pyramid_loss
 
             total_loss.backward()
             optimizer.step()
@@ -173,69 +205,41 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             epoch_loss += total_loss.item()
             batch_count += 1
 
-            # Log individual losses to TensorBoard
             writer.add_scalar("Loss/SR Loss", loss_sr.item(), epoch * len(dataloader) + batch_idx)
             writer.add_scalar("Loss/Low Freq Loss", loss_low_freq.item(), epoch * len(dataloader) + batch_idx)
             writer.add_scalar("Loss/High Freq Loss", loss_high_freq.item(), epoch * len(dataloader) + batch_idx)
             writer.add_scalar("Loss/Uncertainty Loss", uncertainty_loss.item(), epoch * len(dataloader) + batch_idx)
+            writer.add_scalar("Loss/Pyramid Loss", pyramid_loss.item(), epoch * len(dataloader) + batch_idx)
             writer.add_scalar("Loss/Total Loss", total_loss.item(), epoch * len(dataloader) + batch_idx)
 
-            # Save images every few batches
             if batch_idx % 10 == 0:
                 for i in range(lr_img.size(0)):
-                    save_image(
-                        lr_img[i],
-                        os.path.join(output_dir, f"lr_img_{epoch+1}_{batch_idx}_{i}.png"),
-                    )
-                    save_image(
-                        hr_img[i],
-                        os.path.join(output_dir, f"hr_img_{epoch+1}_{batch_idx}_{i}.png"),
-                    )
-                    save_image(
-                        pred_low_freq[i].clamp(0, 1),
-                        os.path.join(output_dir, f"pred_low_freq_{epoch+1}_{batch_idx}_{i}.png"),
-                    )
-                    save_image(
-                        pred_high_freq[i].clamp(0, 1),
-                        os.path.join(output_dir, f"pred_high_freq_{epoch+1}_{batch_idx}_{i}.png"),
-                    )
-                    save_image(
-                        gt_low_freq[i],
-                        os.path.join(output_dir, f"gt_low_freq_{epoch+1}_{batch_idx}_{i}.png"),
-                    )
-                    save_image(
-                        gt_high_freq[i],
-                        os.path.join(output_dir, f"gt_high_freq_{epoch+1}_{batch_idx}_{i}.png"),
-                    )
+                    save_image(lr_img[i], os.path.join(output_dir, f"lr_{epoch}_{batch_idx}_{i}.png"))
+                    save_image(hr_img[i], os.path.join(output_dir, f"hr_{epoch}_{batch_idx}_{i}.png"))
+                    save_image(pred_low_freq[i], os.path.join(output_dir, f"pred_low_freq_{epoch}_{batch_idx}_{i}.png"))
+                    save_image(pred_high_freq[i], os.path.join(output_dir, f"pred_high_freq_{epoch}_{batch_idx}_{i}.png"))
 
-                
-                writer.add_images("Low Frequency Predictions", pred_low_freq.clamp(0, 1), epoch)
-                writer.add_images("High Frequency Predictions", pred_high_freq.clamp(0, 1), epoch)
+        avg_epoch_loss = epoch_loss / batch_count
+        print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {avg_epoch_loss:.4f}")
+        writer.add_scalar("Loss/Average Epoch Loss", avg_epoch_loss, epoch)
 
-            # Clean up
-            del lr_img, hr_img, gt_low_freq, gt_high_freq, pred_low_freq, pred_high_freq
-            torch.cuda.empty_cache()
-
-        average_loss = epoch_loss / batch_count
-        print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {average_loss:.4f}")
-
-        # Log epoch loss to TensorBoard
-        writer.add_scalar("Epoch Loss", average_loss, epoch)
-
-    # Save the model state
-    torch.save(model.state_dict(), "freq_decomp_transformer.pth")
-    writer.close()  # Close the TensorBoard writer
+    writer.close()
 
 
-input_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
-output_dir = os.path.expanduser("/scope-workspaceuser3/outputs")
-log_dir = os.path.expanduser("/scope-workspaceuser3/logs")
-dataset = CustomDataset(input_dir)
-dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+def main():
+	input_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
+	output_dir = os.path.expanduser("/scope-workspaceuser3/outputs")
+	log_dir = os.path.expanduser("/scope-workspaceuser3/logs")
+	dataset = CustomDataset(input_dir)
+	dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
-model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2)
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+	model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2)
+	criterion = nn.MSELoss()
+	optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
-num_epochs = 2
-train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir)
+	num_epochs = 2
+	train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir)
+
+
+if __name__ == "__main__":
+    main()
