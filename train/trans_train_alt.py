@@ -81,6 +81,26 @@ def save_image(tensor, path):
     image = transforms.ToPILImage()(tensor.cpu())
     image.save(path)
 
+def frequency_aware_loss(pred, target):
+    # Compute FFT
+    pred_fft = torch.fft.fft2(pred)
+    target_fft = torch.fft.fft2(target)
+    
+    # Compute magnitude spectrum
+    pred_magnitude = torch.abs(pred_fft)
+    target_magnitude = torch.abs(target_fft)
+    
+    # Compute phase spectrum
+    pred_phase = torch.angle(pred_fft)
+    target_phase = torch.angle(target_fft)
+    
+    magnitude_loss = F.mse_loss(torch.log1p(pred_magnitude), torch.log1p(target_magnitude))
+    
+    phase_diff = pred_phase - target_phase
+    phase_loss = torch.mean(1 - torch.cos(phase_diff))
+    
+    total_loss = magnitude_loss + 0.5 * phase_loss
+    return total_loss
 
 def uncertainty_based_loss(pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq):
     uncertainty_low = torch.abs(pred_low_freq - gt_low_freq)
@@ -138,7 +158,6 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Initialize TensorBoard writer
     writer = SummaryWriter(log_dir)
 
     for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch"):
@@ -159,8 +178,8 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             pred_low_freq, pred_high_freq = model(lr_img)
 
             loss_sr = 1 - ssim_loss(pred_low_freq + pred_high_freq, hr_img)
-            loss_low_freq = criterion(pred_low_freq, gt_low_freq)
-            loss_high_freq = criterion(pred_high_freq, gt_high_freq)
+            loss_low_freq = frequency_aware_loss(pred_low_freq, gt_low_freq)
+            loss_high_freq = frequency_aware_loss(pred_high_freq, gt_high_freq)
             uncertainty_loss = uncertainty_based_loss(
                 pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq
             )
