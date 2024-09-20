@@ -81,26 +81,6 @@ def save_image(tensor, path):
     image = transforms.ToPILImage()(tensor.cpu())
     image.save(path)
 
-def frequency_aware_loss(pred, target):
-    # Compute FFT
-    pred_fft = torch.fft.fft2(pred)
-    target_fft = torch.fft.fft2(target)
-    
-    # Compute magnitude spectrum
-    pred_magnitude = torch.abs(pred_fft)
-    target_magnitude = torch.abs(target_fft)
-    
-    # Compute phase spectrum
-    pred_phase = torch.angle(pred_fft)
-    target_phase = torch.angle(target_fft)
-    
-    magnitude_loss = F.mse_loss(torch.log1p(pred_magnitude), torch.log1p(target_magnitude))
-    
-    phase_diff = pred_phase - target_phase
-    phase_loss = torch.mean(1 - torch.cos(phase_diff))
-    
-    total_loss = magnitude_loss + 0.5 * phase_loss
-    return total_loss
 
 def uncertainty_based_loss(pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq):
     uncertainty_low = torch.abs(pred_low_freq - gt_low_freq)
@@ -158,12 +138,18 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    # Initialize TensorBoard writer
     writer = SummaryWriter(log_dir)
 
     for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch"):
         model.train()
         epoch_loss = 0.0
         batch_count = 0
+        running_mean_sr, running_var_sr = 0.0, 0.0
+        running_mean_low_freq, running_var_low_freq = 0.0, 0.0
+        running_mean_high_freq, running_var_high_freq = 0.0, 0.0
+        running_mean_uncertainty, running_var_uncertainty = 0.0, 0.0
+        alpha = 0.1  # Smoothing factor
 
         for batch_idx, (lr_img, hr_img, gt_low_freq, gt_high_freq) in tqdm(
             enumerate(dataloader), desc="Batch", unit="Batches"
@@ -177,12 +163,23 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
 
             pred_low_freq, pred_high_freq = model(lr_img)
 
-            loss_sr = 1 - ssim_loss(pred_low_freq + pred_high_freq, hr_img)
-            loss_low_freq = frequency_aware_loss(pred_low_freq, gt_low_freq)
-            loss_high_freq = frequency_aware_loss(pred_high_freq, gt_high_freq)
+            loss_sr = ssim_loss(pred_low_freq + pred_high_freq, hr_img)
+            loss_low_freq = criterion(pred_low_freq, gt_low_freq)
+            loss_high_freq = criterion(pred_high_freq, gt_high_freq)
             uncertainty_loss = uncertainty_based_loss(
                 pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq
             )
+
+            # Assume theoretical max values for normalization
+            max_val_sr = 1.0
+            max_val_low_freq = 1.0
+            max_val_high_freq = 1.0
+            max_val_uncertainty = 1.0
+
+            loss_sr = loss_sr / max_val_sr
+            loss_low_freq = loss_low_freq / max_val_low_freq
+            loss_high_freq = loss_high_freq / max_val_high_freq
+            uncertainty_loss = uncertainty_loss / max_val_uncertainty
 
             total_loss = loss_sr + loss_low_freq + loss_high_freq + uncertainty_loss
 
@@ -192,7 +189,6 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             epoch_loss += total_loss.item()
             batch_count += 1
 
-            # Log individual losses to TensorBoard
             writer.add_scalar("Loss/SR Loss", loss_sr.item(), epoch * len(dataloader) + batch_idx)
             writer.add_scalar("Loss/Low Freq Loss", loss_low_freq.item(), epoch * len(dataloader) + batch_idx)
             writer.add_scalar("Loss/High Freq Loss", loss_high_freq.item(), epoch * len(dataloader) + batch_idx)
@@ -246,9 +242,9 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
     writer.close()  # Close the TensorBoard writer
 
 
-input_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq")
-output_dir = os.path.expanduser("/scope-workspaceuser3/outputs")
-log_dir = os.path.expanduser("/scope-workspaceuser3/logs")
+input_dir = os.path.expanduser("/scope-workspaceuser3/processed_ffhq_small")
+output_dir = os.path.expanduser("/scope-workspaceuser3/outputs_small")
+log_dir = os.path.expanduser("/scope-workspaceuser3/logs_small")
 dataset = CustomDataset(input_dir)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
@@ -256,5 +252,5 @@ model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
-num_epochs = 2
+num_epochs = 10
 train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir)
