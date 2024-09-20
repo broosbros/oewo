@@ -81,6 +81,15 @@ def save_image(tensor, path):
     image = transforms.ToPILImage()(tensor.cpu())
     image.save(path)
 
+import torch.fft
+
+def fft_loss(pred, target):
+    pred_fft = torch.fft.fft2(pred)
+    target_fft = torch.fft.fft2(target)
+    loss = torch.mean((torch.abs(pred_fft - target_fft)) ** 2)
+    
+    return loss
+
 
 def uncertainty_based_loss(pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq):
     uncertainty_low = torch.abs(pred_low_freq - gt_low_freq)
@@ -131,7 +140,7 @@ def ssim_loss(pred, target):
     ssim_value = ssim(pred, target, data_range=1.0, size_average=True)
     return 1 - ssim_value
     
-def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir):
+def train(model, dataloader, num_epochs, optimizer, output_dir, log_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -164,8 +173,8 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             pred_low_freq, pred_high_freq = model(lr_img)
 
             loss_sr = ssim_loss(pred_low_freq + pred_high_freq, hr_img)
-            loss_low_freq = criterion(pred_low_freq, gt_low_freq)
-            loss_high_freq = criterion(pred_high_freq, gt_high_freq)
+            loss_low_freq = fft_loss(pred_low_freq, gt_low_freq)
+            loss_high_freq = fft_loss(pred_high_freq, gt_high_freq)
             uncertainty_loss = uncertainty_based_loss(
                 pred_low_freq, pred_high_freq, gt_low_freq, gt_high_freq
             )
@@ -174,7 +183,7 @@ def train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_d
             max_val_sr = 1.0
             max_val_low_freq = 1.0
             max_val_high_freq = 1.0
-            max_val_uncertainty = 1.0
+            max_val_uncertainty = 1500
 
             loss_sr = loss_sr / max_val_sr
             loss_low_freq = loss_low_freq / max_val_low_freq
@@ -249,8 +258,7 @@ dataset = CustomDataset(input_dir)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
 model = FrequencyDecompositionVisionTransformer(input_channels=3, scale_factor=2)
-criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 num_epochs = 10
-train(model, dataloader, num_epochs, criterion, optimizer, output_dir, log_dir)
+train(model, dataloader, num_epochs, optimizer, output_dir, log_dir)
